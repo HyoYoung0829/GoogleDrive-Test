@@ -1,65 +1,128 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect } from 'react';
 
 export default function Home() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // 제공해주신 클라이언트 ID입니다.
+  const GOOGLE_CLIENT_ID = '1096735541122-g6hgmt77aru51dts1llqta5q272d527b.apps.googleusercontent.com';
+  const REDIRECT_URI = 'http://localhost:3000/auth/callback';
+
+  const handleLogin = () => {
+    // URLSearchParams를 사용하면 특수문자나 공백 처리가 자동으로 되어 안전합니다.
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      response_type: 'code',
+      scope: 'https://www.googleapis.com/auth/drive.file', // 중요: 이 앱이 만든 파일만 접근
+      access_type: 'offline', // 리프레시 토큰 발급용
+      prompt: 'consent',      // 항상 동의 화면 띄우기 (리프레시 토큰 확실히 받기 위해)
+    });
+
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    
+    // 팝업 띄우기
+    window.open(url, 'google_login_popup', 'width=500,height=600');
+  };
+
+  // 팝업에서 보내온 메시지(인증 코드) 수신
+  useEffect(() => {
+    const handleMessage = async (e: MessageEvent) => {
+      // 보안 확인: 메시지가 우리 사이트(localhost:3000)에서 온 게 맞는지 체크
+      if (e.origin !== window.location.origin) return;
+
+      // 팝업이 닫히면서 보낸 code가 있는지 확인
+      if (e.data?.code) {
+        console.log('인증 코드 확인:', e.data.code);
+
+        try {
+          // BFF(Next.js API)로 코드 전송 -> 토큰 교환 요청
+          const res = await fetch('/api/auth/google', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ code: e.data.code }),
+          });
+
+          if (res.ok) {
+            alert('로그인 성공! 쿠키가 생성되었습니다.');
+            setIsLoggedIn(true);
+          } else {
+            const errorData = await res.json();
+            console.error('토큰 교환 실패:', errorData);
+            alert('로그인 처리 중 오류가 발생했습니다.');
+          }
+        } catch (error) {
+          console.error('API 요청 에러:', error);
+          alert('서버와 통신 중 에러가 발생했습니다.');
+        }
+      }
+    };
+
+    // 이벤트 리스너 등록
+    window.addEventListener('message', handleMessage);
+    
+    // 컴포넌트가 사라질 때 리스너 제거 (Clean-up)
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // 폴더 생성 테스트 함수
+  const createTestFolder = async () => {
+    try {
+      const res = await fetch('/api/drive/create-folder', { method: 'POST' });
+      const data = await res.json();
+      
+      if (data.fileId) {
+        alert(`성공! 드라이브를 확인하세요.\n폴더명: ${data.name}\nID: ${data.fileId}`);
+      } else {
+        alert('실패: ' + JSON.stringify(data));
+      }
+    } catch (error) {
+      console.error('폴더 생성 에러:', error);
+      alert('폴더 생성 요청 중 에러가 발생했습니다.');
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div style={{ padding: 50, display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'flex-start' }}>
+      <h1>모바일 청첩장: 구글 드라이브 연동 테스트</h1>
+      
+      {!isLoggedIn ? (
+        <button 
+          onClick={handleLogin} 
+          style={{ 
+            padding: '12px 24px', 
+            fontSize: '16px', 
+            cursor: 'pointer',
+            backgroundColor: '#4285F4',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px'
+          }}
+        >
+          구글 드라이브 연결하기
+        </button>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <p style={{ color: 'green', fontWeight: 'bold' }}>✅ 인증 완료 (쿠키 저장됨)</p>
+          <button 
+            onClick={createTestFolder} 
+            style={{ 
+              padding: '12px 24px', 
+              fontSize: '16px', 
+              cursor: 'pointer', 
+              background: '#0F9D58', 
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px'
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            내 드라이브에 청첩장_테스트 폴더 만들기
+          </button>
         </div>
-      </main>
+      )}
     </div>
   );
 }
